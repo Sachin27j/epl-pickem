@@ -1,0 +1,9 @@
+{
+  "name": "epl-pickem",
+  "private": true,
+  "packageManager": "pnpm@11.14.0",
+  "scripts": {
+    "dev": "pnpm -r dev",
+    "build": "pnpm -r build"
+  }
+}
