@@ -7,12 +7,279 @@ datasource db {
   provider = "postgresql"
 }
 
+enum LeagueRole {
+  ADMIN
+  PLAYER
+}
+
+enum SeasonStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+}
+
+enum GameweekStatus {
+  UPCOMING
+  OPEN
+  LOCKED
+  REVEALED
+}
+
+enum FixtureStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+}
+
+enum ResultSource {
+  API
+  MANUAL
+}
+
+enum EventType {
+  PICK_SUBMITTED
+  PICK_UPDATED
+  PREDICTION_BOOST_USED
+  LATE_PASS_USED
+  FIXTURES_IMPORTED
+  GAMEWEEK_REVEALED
+  SEASON_CREATED
+}
+
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
+  id           String @id @default(cuid())
+  name         String
+  email        String @unique
+  passwordHash String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  memberships LeagueMember[]
+  picks       Pick[]
+  events      EventLog[]
+  auditLogs   AuditLog[]
+  snapshots   StandingSnapshot[]
+}
+
+model League {
+  id         String @id @default(cuid())
+  name       String
+  inviteCode String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members      LeagueMember[]
+  seasons      Season[]
+  settings     LeagueSettings?
+  events       EventLog[]
+  auditLogs    AuditLog[]
+}
+
+model LeagueMember {
+  id String @id @default(cuid())
+
+  userId   String
+  leagueId String
+
+  role LeagueRole @default(PLAYER)
+
+  joinedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  league League @relation(fields: [leagueId], references: [id])
+
+  @@unique([userId, leagueId])
+}
+
+model LeagueSettings {
+  id String @id @default(cuid())
+
+  leagueId String @unique
+
+  predictionBoosts Int @default(5)
+  latePasses       Int @default(3)
+
+  deadlineOffsetMinutes Int @default(60)
+
+  league League @relation(fields: [leagueId], references: [id])
+}
+
+model Season {
+  id String @id @default(cuid())
+
+  leagueId String
+
+  name   String
+  status SeasonStatus
+
+  createdAt DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id])
+
+  gameweeks SeasonGameweek[]
+  snapshots StandingSnapshot[]
+}
+
+model Team {
+  id String @id @default(cuid())
+
+  name      String
+  shortName String @unique
+  logoUrl   String?
+
+  homeFixtures Fixture[] @relation("HomeTeam")
+  awayFixtures Fixture[] @relation("AwayTeam")
+
+  picks Pick[]
+}
+
+model SeasonGameweek {
+  id String @id @default(cuid())
+
+  seasonId String
+
+  number Int
+
+  deadline DateTime
+
+  status GameweekStatus
+
+  season Season @relation(fields: [seasonId], references: [id])
+
+  fixtures Fixture[]
+  picks Pick[]
+  snapshots StandingSnapshot[]
+  events EventLog[]
+
+  @@unique([seasonId, number])
+}
+
+model Fixture {
+  id String @id @default(cuid())
+
+  gameweekId String
+
+  homeTeamId String
+  awayTeamId String
+
+  kickoff DateTime
+
+  status FixtureStatus
+
+  homeGoals Int?
+  awayGoals Int?
+
+  source ResultSource
+
+  lastSyncedAt DateTime?
+
+  gameweek SeasonGameweek @relation(fields: [gameweekId], references: [id])
+
+  homeTeam Team @relation("HomeTeam", fields: [homeTeamId], references: [id])
+
+  awayTeam Team @relation("AwayTeam", fields: [awayTeamId], references: [id])
+}
+
+model Pick {
+  id String @id @default(cuid())
+
+  userId String
+
+  gameweekId String
+
+  teamId String
+
+  predictionBoostUsed Boolean @default(false)
+
+  predictedHomeGoals Int?
+
+  predictedAwayGoals Int?
+
+  latePassUsed Boolean @default(false)
+
+  submittedAt DateTime @default(now())
+
+  basePoints Int @default(0)
+
+  gdBonus Int @default(0)
+
+  predictionMultiplier Int @default(1)
+
+  totalPoints Int @default(0)
+
+  user User @relation(fields: [userId], references: [id])
+
+  gameweek SeasonGameweek @relation(fields: [gameweekId], references: [id])
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, gameweekId])
+}
+
+model StandingSnapshot {
+  id String @id @default(cuid())
+
+  seasonId String
+
+  gameweekId String
+
+  userId String
+
+  rank Int
+
+  points Int
+
+  season Season @relation(fields: [seasonId], references: [id])
+
+  gameweek SeasonGameweek @relation(fields: [gameweekId], references: [id])
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model EventLog {
+  id String @id @default(cuid())
+
+  leagueId String
+
+  userId String?
+
+  gameweekId String?
+
+  eventType EventType
+
+  description String
+
+  createdAt DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id])
+
+  user User? @relation(fields: [userId], references: [id])
+
+  gameweek SeasonGameweek? @relation(fields: [gameweekId], references: [id])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  leagueId String
+
+  adminId String
+
+  entity String
+
+  entityId String
+
+  action String
+
+  oldValue Json?
+
+  newValue Json?
+
+  createdAt DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id])
+
+  admin User @relation(fields: [adminId], references: [id])
 }
