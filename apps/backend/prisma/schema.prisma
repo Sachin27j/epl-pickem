@@ -55,11 +55,13 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships LeagueMember[]
-  picks       Pick[]
-  events      EventLog[]
-  auditLogs   AuditLog[]
-  snapshots   StandingSnapshot[]
+  memberships    LeagueMember[]
+  createdLeagues League[]       @relation("LeagueCreator")
+
+  picks     Pick[]
+  events    EventLog[]
+  auditLogs AuditLog[]
+  snapshots StandingSnapshot[]
 }
 
 model League {
@@ -67,14 +69,17 @@ model League {
   name       String
   inviteCode String @unique
 
+  createdById String
+  createdBy   User   @relation("LeagueCreator", fields: [createdById], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members      LeagueMember[]
-  seasons      Season[]
-  settings     LeagueSettings?
-  events       EventLog[]
-  auditLogs    AuditLog[]
+  members   LeagueMember[]
+  seasons   Season[]
+  settings  LeagueSettings?
+  events    EventLog[]
+  auditLogs AuditLog[]
 }
 
 model LeagueMember {
@@ -126,7 +131,7 @@ model Team {
   id String @id @default(cuid())
 
   name      String
-  shortName String @unique
+  shortName String  @unique
   logoUrl   String?
 
   homeFixtures Fixture[] @relation("HomeTeam")
@@ -148,10 +153,10 @@ model SeasonGameweek {
 
   season Season @relation(fields: [seasonId], references: [id])
 
-  fixtures Fixture[]
-  picks Pick[]
+  fixtures  Fixture[]
+  picks     Pick[]
   snapshots StandingSnapshot[]
-  events EventLog[]
+  events    EventLog[]
 
   @@unique([seasonId, number])
 }
