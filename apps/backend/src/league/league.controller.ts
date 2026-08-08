@@ -1,4 +1,12 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 
 import { LeagueService } from './league.service';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
@@ -18,5 +26,15 @@ export class LeagueController {
   @Post('join')
   join(@Body() dto: JoinLeagueDto, @Req() req: any) {
     return this.leagueService.join(dto.inviteCode, req.user.id);
+  }
+
+  @Get()
+  getMyLeagues(@Req() req: any) {
+    return this.leagueService.getMyLeagues(req.user.id);
+  }
+
+  @Get(':id')
+  getLeague(@Param('id') id: string, @Req() req: any) {
+    return this.leagueService.getById(id, req.user.id);
   }
 }

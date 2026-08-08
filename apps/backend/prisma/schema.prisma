@@ -137,7 +137,8 @@ model Team {
   homeFixtures Fixture[] @relation("HomeTeam")
   awayFixtures Fixture[] @relation("AwayTeam")
 
-  picks Pick[]
+  picks   Pick[]
+  results GameweekTeamResult[]
 }
 
 model SeasonGameweek {
@@ -157,6 +158,7 @@ model SeasonGameweek {
   picks     Pick[]
   snapshots StandingSnapshot[]
   events    EventLog[]
+  results   GameweekTeamResult[]
 
   @@unique([seasonId, number])
 }
@@ -287,4 +289,19 @@ model AuditLog {
   league League @relation(fields: [leagueId], references: [id])
 
   admin User @relation(fields: [adminId], references: [id])
+}
+
+model GameweekTeamResult {
+  id String @id @default(cuid())
+
+  gameweekId String
+  teamId     String
+
+  goalsFor     Int
+  goalsAgainst Int
+
+  gameweek SeasonGameweek @relation(fields: [gameweekId], references: [id])
+  team     Team           @relation(fields: [teamId], references: [id])
+
+  @@unique([gameweekId, teamId])
 }

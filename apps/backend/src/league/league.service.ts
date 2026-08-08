@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 
@@ -62,6 +62,54 @@ export class LeagueService {
       data: {
         userId,
         leagueId: league.id,
+      },
+    });
+  }
+
+  async getById(id: string, userId: string) {
+    const league = await this.prisma.league.findUnique({
+      where: {
+        id,
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!league) {
+      throw new NotFoundException('League not found');
+    }
+
+    const isMember = league.members.some((member) => member.userId === userId);
+
+    if (!isMember) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    return league;
+  }
+
+  async getMyLeagues(userId: string) {
+    return this.prisma.league.findMany({
+      where: {
+        members: {
+          some: {
+            userId,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
       },
     });
   }
