@@ -207,7 +207,7 @@ export class SeasonService {
     dto: CreateGameweekResultDto,
     userId: string,
   ) {
-    const season = await this.getAdminSeason(seasonId, userId);
+    await this.getAdminSeason(seasonId, userId);
 
     const gameweek = await this.getAdminGameweek(seasonId, gameweekId, userId);
 

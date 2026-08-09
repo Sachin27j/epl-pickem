@@ -53,11 +53,6 @@ export class ScoringService {
       },
     });
 
-    /*
-     * Make sure every selected team has a result.
-     * Otherwise we could accidentally reveal a gameweek
-     * with incomplete scores.
-     */
     const results = await this.prisma.gameweekTeamResult.findMany({
       where: {
         gameweekId,

@@ -40,13 +40,8 @@ export class PickService {
       throw new ForbiddenException('You are not a member of this league');
     }
 
-    /*
-     * Picks are only accepted while the gameweek
-     * is OPEN.
-     *
-     * A Late Pass bypasses the deadline, but it
-     * does not bypass a manually LOCKED gameweek.
-     */
+    // A Late Pass can bypass the deadline,
+    // but can NEVER bypass a locked/revealed gameweek.
     if (gameweek.status !== 'OPEN') {
       throw new ForbiddenException(
         'Picks are not currently open for this gameweek',
@@ -90,11 +85,6 @@ export class PickService {
       );
     }
 
-    /*
-     * Prediction Boost
-     *
-     * Five uses per season.
-     */
     if (dto.predictionBoostUsed) {
       if (
         dto.predictedHomeGoals === undefined ||
@@ -122,11 +112,6 @@ export class PickService {
       }
     }
 
-    /*
-     * Late Pass
-     *
-     * Three uses per season.
-     */
     if (dto.latePassUsed) {
       const latePassesUsed = await this.prisma.pick.count({
         where: {
@@ -145,10 +130,6 @@ export class PickService {
       }
     }
 
-    /*
-     * A team cannot be picked in consecutive
-     * gameweeks.
-     */
     const previousGameweek = await this.prisma.seasonGameweek.findFirst({
       where: {
         seasonId: gameweek.seasonId,
@@ -233,10 +214,7 @@ export class PickService {
       throw new ForbiddenException('You can only update your own pick');
     }
 
-    /*
-     * A locked gameweek cannot be changed,
-     * even with a Late Pass.
-     */
+    // Late Pass cannot bypass LOCKED or REVEALED.
     if (pick.gameweek.status !== 'OPEN') {
       throw new ForbiddenException('Picks are not currently open');
     }
