@@ -1,19 +1,30 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSeasonDto } from './dto/create-season.dto';
 import { CreateGameweekDto } from './dto/create-gameweek.dto';
 import { CreateGameweekResultDto } from './dto/create-gameweek-result.dto';
+import { CreateSeasonDto } from './dto/create-season.dto';
 
 @Injectable()
 export class SeasonService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateSeasonDto, userId: string) {
+    const league = await this.prisma.league.findUnique({
+      where: {
+        id: dto.leagueId,
+      },
+    });
+
+    if (!league) {
+      throw new NotFoundException('League not found');
+    }
+
     const membership = await this.prisma.leagueMember.findUnique({
       where: {
         userId_leagueId: {
@@ -24,11 +35,11 @@ export class SeasonService {
     });
 
     if (!membership) {
-      throw new NotFoundException('League not found');
+      throw new ForbiddenException('You are not a member of this league');
     }
 
     if (membership.role !== 'ADMIN') {
-      throw new ForbiddenException('Only league admins can create a season');
+      throw new ForbiddenException('Only league admins can create seasons');
     }
 
     return this.prisma.season.create({
@@ -40,19 +51,15 @@ export class SeasonService {
     });
   }
 
-  async createGameweek(
-    seasonId: string,
-    dto: CreateGameweekDto,
-    userId: string,
-  ) {
+  async getSeason(seasonId: string, userId: string) {
     const season = await this.prisma.season.findUnique({
       where: {
         id: seasonId,
       },
       include: {
-        league: {
-          select: {
-            id: true,
+        gameweeks: {
+          orderBy: {
+            number: 'asc',
           },
         },
       },
@@ -66,17 +73,76 @@ export class SeasonService {
       where: {
         userId_leagueId: {
           userId,
-          leagueId: season.league.id,
+          leagueId: season.leagueId,
         },
       },
     });
 
     if (!membership) {
-      throw new NotFoundException('League not found');
+      throw new ForbiddenException('You are not a member of this league');
     }
 
-    if (membership.role !== 'ADMIN') {
-      throw new ForbiddenException('Only league admins can create a gameweek');
+    return season;
+  }
+
+  async activateSeason(seasonId: string, userId: string) {
+    const season = await this.getAdminSeason(seasonId, userId);
+
+    if (season.status !== 'UPCOMING') {
+      throw new ForbiddenException('Only an upcoming season can be activated');
+    }
+
+    return this.prisma.season.update({
+      where: {
+        id: seasonId,
+      },
+      data: {
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  async completeSeason(seasonId: string, userId: string) {
+    const season = await this.getAdminSeason(seasonId, userId);
+
+    if (season.status !== 'ACTIVE') {
+      throw new ForbiddenException('Only an active season can be completed');
+    }
+
+    return this.prisma.season.update({
+      where: {
+        id: seasonId,
+      },
+      data: {
+        status: 'COMPLETED',
+      },
+    });
+  }
+
+  async createGameweek(
+    seasonId: string,
+    dto: CreateGameweekDto,
+    userId: string,
+  ) {
+    const season = await this.getAdminSeason(seasonId, userId);
+
+    if (season.status === 'COMPLETED') {
+      throw new ForbiddenException(
+        'Cannot create a gameweek for a completed season',
+      );
+    }
+
+    const existingGameweek = await this.prisma.seasonGameweek.findUnique({
+      where: {
+        seasonId_number: {
+          seasonId,
+          number: dto.number,
+        },
+      },
+    });
+
+    if (existingGameweek) {
+      throw new ConflictException('A gameweek with this number already exists');
     }
 
     return this.prisma.seasonGameweek.create({
@@ -88,6 +154,24 @@ export class SeasonService {
       },
     });
   }
+
+  async openGameweek(seasonId: string, gameweekId: string, userId: string) {
+    const gameweek = await this.getAdminGameweek(seasonId, gameweekId, userId);
+
+    if (gameweek.status !== 'UPCOMING') {
+      throw new ForbiddenException('Only an upcoming gameweek can be opened');
+    }
+
+    return this.prisma.seasonGameweek.update({
+      where: {
+        id: gameweekId,
+      },
+      data: {
+        status: 'OPEN',
+      },
+    });
+  }
+
   async createResult(
     seasonId: string,
     gameweekId: string,
@@ -131,6 +215,10 @@ export class SeasonService {
       throw new NotFoundException('Gameweek not found');
     }
 
+    if (gameweek.status === 'REVEALED') {
+      throw new ForbiddenException('This gameweek has already been revealed');
+    }
+
     const team = await this.prisma.team.findUnique({
       where: {
         id: dto.teamId,
@@ -159,5 +247,115 @@ export class SeasonService {
         goalsAgainst: dto.goalsAgainst,
       },
     });
+  }
+
+  async lockGameweek(seasonId: string, gameweekId: string, userId: string) {
+    const gameweek = await this.getAdminGameweek(seasonId, gameweekId, userId);
+
+    if (gameweek.status !== 'OPEN') {
+      throw new ForbiddenException('Only an open gameweek can be locked');
+    }
+
+    return this.prisma.seasonGameweek.update({
+      where: {
+        id: gameweekId,
+      },
+      data: {
+        status: 'LOCKED',
+      },
+    });
+  }
+
+  async revealGameweek(seasonId: string, gameweekId: string, userId: string) {
+    const gameweek = await this.getAdminGameweek(seasonId, gameweekId, userId);
+
+    if (gameweek.status !== 'LOCKED') {
+      throw new ForbiddenException('Only a locked gameweek can be revealed');
+    }
+
+    return this.prisma.seasonGameweek.update({
+      where: {
+        id: gameweekId,
+      },
+      data: {
+        status: 'REVEALED',
+      },
+    });
+  }
+
+  private async getAdminGameweek(
+    seasonId: string,
+    gameweekId: string,
+    userId: string,
+  ) {
+    const season = await this.prisma.season.findUnique({
+      where: {
+        id: seasonId,
+      },
+    });
+
+    if (!season) {
+      throw new NotFoundException('Season not found');
+    }
+
+    const membership = await this.prisma.leagueMember.findUnique({
+      where: {
+        userId_leagueId: {
+          userId,
+          leagueId: season.leagueId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    if (membership.role !== 'ADMIN') {
+      throw new ForbiddenException('Only league admins can manage gameweeks');
+    }
+
+    const gameweek = await this.prisma.seasonGameweek.findUnique({
+      where: {
+        id: gameweekId,
+      },
+    });
+
+    if (!gameweek || gameweek.seasonId !== seasonId) {
+      throw new NotFoundException('Gameweek not found');
+    }
+
+    return gameweek;
+  }
+
+  private async getAdminSeason(seasonId: string, userId: string) {
+    const season = await this.prisma.season.findUnique({
+      where: {
+        id: seasonId,
+      },
+    });
+
+    if (!season) {
+      throw new NotFoundException('Season not found');
+    }
+
+    const membership = await this.prisma.leagueMember.findUnique({
+      where: {
+        userId_leagueId: {
+          userId,
+          leagueId: season.leagueId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    if (membership.role !== 'ADMIN') {
+      throw new ForbiddenException('Only league admins can manage the season');
+    }
+
+    return season;
   }
 }

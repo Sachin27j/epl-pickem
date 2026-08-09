@@ -9,11 +9,11 @@ import {
 } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
-import { CreateSeasonDto } from './dto/create-season.dto';
-import { SeasonService } from './season.service';
+import { ScoringService } from '../scoring/scoring.service';
 import { CreateGameweekDto } from './dto/create-gameweek.dto';
 import { CreateGameweekResultDto } from './dto/create-gameweek-result.dto';
-import { ScoringService } from '../scoring/scoring.service';
+import { CreateSeasonDto } from './dto/create-season.dto';
+import { SeasonService } from './season.service';
 
 @Controller('season')
 @UseGuards(JwtAuthGuard)
@@ -28,6 +28,21 @@ export class SeasonController {
     return this.seasonService.create(dto, req.user.id);
   }
 
+  @Get(':seasonId')
+  getSeason(@Param('seasonId') seasonId: string, @Req() req: any) {
+    return this.seasonService.getSeason(seasonId, req.user.id);
+  }
+
+  @Post(':seasonId/activate')
+  activateSeason(@Param('seasonId') seasonId: string, @Req() req: any) {
+    return this.seasonService.activateSeason(seasonId, req.user.id);
+  }
+
+  @Post(':seasonId/complete')
+  completeSeason(@Param('seasonId') seasonId: string, @Req() req: any) {
+    return this.seasonService.completeSeason(seasonId, req.user.id);
+  }
+
   @Post(':seasonId/gameweek')
   createGameweek(
     @Param('seasonId') seasonId: string,
@@ -36,6 +51,16 @@ export class SeasonController {
   ) {
     return this.seasonService.createGameweek(seasonId, dto, req.user.id);
   }
+
+  @Post(':seasonId/gameweek/:gameweekId/open')
+  openGameweek(
+    @Param('seasonId') seasonId: string,
+    @Param('gameweekId') gameweekId: string,
+    @Req() req: any,
+  ) {
+    return this.seasonService.openGameweek(seasonId, gameweekId, req.user.id);
+  }
+
   @Post(':seasonId/gameweek/:gameweekId/result')
   createResult(
     @Param('seasonId') seasonId: string,
@@ -54,5 +79,23 @@ export class SeasonController {
   @Post(':seasonId/gameweek/:gameweekId/score')
   calculateScore(@Param('gameweekId') gameweekId: string, @Req() req: any) {
     return this.scoringService.scoreGameweek(gameweekId, req.user.id);
+  }
+
+  @Post(':seasonId/gameweek/:gameweekId/lock')
+  lockGameweek(
+    @Param('seasonId') seasonId: string,
+    @Param('gameweekId') gameweekId: string,
+    @Req() req: any,
+  ) {
+    return this.seasonService.lockGameweek(seasonId, gameweekId, req.user.id);
+  }
+
+  @Post(':seasonId/gameweek/:gameweekId/reveal')
+  revealGameweek(
+    @Param('seasonId') seasonId: string,
+    @Param('gameweekId') gameweekId: string,
+    @Req() req: any,
+  ) {
+    return this.seasonService.revealGameweek(seasonId, gameweekId, req.user.id);
   }
 }

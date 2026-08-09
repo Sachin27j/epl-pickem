@@ -72,8 +72,12 @@ export class ScoringService {
         }
       } else if (result.goalsFor === result.goalsAgainst) {
         basePoints = 1;
-      } else if (result.goalsAgainst - result.goalsFor >= 3) {
-        gdBonus = -1;
+      } else {
+        basePoints = 0;
+
+        if (result.goalsAgainst - result.goalsFor >= 3) {
+          gdBonus = -1;
+        }
       }
 
       const scoreBeforeBoost = basePoints + gdBonus;
