@@ -40,20 +40,29 @@ export class PickService {
       throw new ForbiddenException('You are not a member of this league');
     }
 
-    const isPastDeadline = new Date() > gameweek.deadline;
-
-    if (gameweek.status === 'REVEALED') {
-      throw new ForbiddenException('This gameweek has already been revealed');
-    }
-
-    if (gameweek.status !== 'OPEN' && !dto.latePassUsed) {
+    /*
+     * Picks are only accepted while the gameweek
+     * is OPEN.
+     *
+     * A Late Pass bypasses the deadline, but it
+     * does not bypass a manually LOCKED gameweek.
+     */
+    if (gameweek.status !== 'OPEN') {
       throw new ForbiddenException(
         'Picks are not currently open for this gameweek',
       );
     }
 
+    const isPastDeadline = new Date() > gameweek.deadline;
+
     if (isPastDeadline && !dto.latePassUsed) {
       throw new ForbiddenException('The deadline for this gameweek has passed');
+    }
+
+    if (dto.latePassUsed && !isPastDeadline) {
+      throw new ConflictException(
+        'Late Pass can only be used after the deadline',
+      );
     }
 
     const team = await this.prisma.team.findUnique({
@@ -81,6 +90,11 @@ export class PickService {
       );
     }
 
+    /*
+     * Prediction Boost
+     *
+     * Five uses per season.
+     */
     if (dto.predictionBoostUsed) {
       if (
         dto.predictedHomeGoals === undefined ||
@@ -108,6 +122,11 @@ export class PickService {
       }
     }
 
+    /*
+     * Late Pass
+     *
+     * Three uses per season.
+     */
     if (dto.latePassUsed) {
       const latePassesUsed = await this.prisma.pick.count({
         where: {
@@ -126,6 +145,10 @@ export class PickService {
       }
     }
 
+    /*
+     * A team cannot be picked in consecutive
+     * gameweeks.
+     */
     const previousGameweek = await this.prisma.seasonGameweek.findFirst({
       where: {
         seasonId: gameweek.seasonId,
@@ -210,18 +233,24 @@ export class PickService {
       throw new ForbiddenException('You can only update your own pick');
     }
 
-    const isPastDeadline = new Date() > pick.gameweek.deadline;
-
-    if (pick.gameweek.status === 'REVEALED') {
-      throw new ForbiddenException('This gameweek has already been revealed');
-    }
-
-    if (pick.gameweek.status !== 'OPEN' && !dto.latePassUsed) {
+    /*
+     * A locked gameweek cannot be changed,
+     * even with a Late Pass.
+     */
+    if (pick.gameweek.status !== 'OPEN') {
       throw new ForbiddenException('Picks are not currently open');
     }
 
+    const isPastDeadline = new Date() > pick.gameweek.deadline;
+
     if (isPastDeadline && !dto.latePassUsed) {
       throw new ForbiddenException('The deadline for this gameweek has passed');
+    }
+
+    if (dto.latePassUsed && !isPastDeadline) {
+      throw new ConflictException(
+        'Late Pass can only be used after the deadline',
+      );
     }
 
     if (dto.latePassUsed) {

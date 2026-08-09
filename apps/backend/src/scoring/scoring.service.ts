@@ -41,21 +41,43 @@ export class ScoringService {
       throw new ForbiddenException('Only league admins can calculate scores');
     }
 
+    if (gameweek.status !== 'LOCKED') {
+      throw new ForbiddenException(
+        'Gameweek must be locked before scores can be calculated',
+      );
+    }
+
     const picks = await this.prisma.pick.findMany({
       where: {
         gameweekId,
       },
     });
 
+    /*
+     * Make sure every selected team has a result.
+     * Otherwise we could accidentally reveal a gameweek
+     * with incomplete scores.
+     */
+    const results = await this.prisma.gameweekTeamResult.findMany({
+      where: {
+        gameweekId,
+      },
+    });
+
+    const resultsByTeam = new Map(
+      results.map((result) => [result.teamId, result]),
+    );
+
+    const missingResult = picks.find((pick) => !resultsByTeam.has(pick.teamId));
+
+    if (missingResult) {
+      throw new ForbiddenException(
+        'Results are missing for one or more selected teams',
+      );
+    }
+
     for (const pick of picks) {
-      const result = await this.prisma.gameweekTeamResult.findUnique({
-        where: {
-          gameweekId_teamId: {
-            gameweekId,
-            teamId: pick.teamId,
-          },
-        },
-      });
+      const result = resultsByTeam.get(pick.teamId);
 
       if (!result) {
         continue;

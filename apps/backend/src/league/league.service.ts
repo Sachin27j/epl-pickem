@@ -1,17 +1,37 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+
 import { PrismaService } from '../prisma/prisma.service';
-import { ConflictException, NotFoundException } from '@nestjs/common';
 
 @Injectable()
 export class LeagueService {
   constructor(private readonly prisma: PrismaService) {}
 
   private generateInviteCode(): string {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
+    return randomBytes(4).toString('hex').toUpperCase();
   }
 
   async create(name: string, userId: string) {
-    const inviteCode = this.generateInviteCode();
+    let inviteCode: string;
+
+    do {
+      inviteCode = this.generateInviteCode();
+
+      const existing = await this.prisma.league.findUnique({
+        where: {
+          inviteCode,
+        },
+      });
+
+      if (!existing) {
+        break;
+      }
+    } while (true);
 
     return this.prisma.$transaction(async (tx) => {
       const league = await tx.league.create({
@@ -37,7 +57,7 @@ export class LeagueService {
   async join(inviteCode: string, userId: string) {
     const league = await this.prisma.league.findUnique({
       where: {
-        inviteCode,
+        inviteCode: inviteCode.trim().toUpperCase(),
       },
     });
 
@@ -78,7 +98,6 @@ export class LeagueService {
               select: {
                 id: true,
                 name: true,
-                email: true,
               },
             },
           },

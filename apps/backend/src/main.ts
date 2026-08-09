@@ -1,6 +1,18 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import { existsSync } from 'node:fs';
+import { loadEnvFile } from 'node:process';
+
 import { ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+
+import { AppModule } from './app.module';
+
+if (!process.env.JWT_SECRET && existsSync('.env')) {
+  loadEnvFile();
+}
+
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,4 +27,5 @@ async function bootstrap() {
 
   await app.listen(process.env.PORT ?? 3000);
 }
+
 bootstrap();

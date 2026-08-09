@@ -109,6 +109,21 @@ export class SeasonService {
       throw new ForbiddenException('Only an active season can be completed');
     }
 
+    const unfinishedGameweeks = await this.prisma.seasonGameweek.count({
+      where: {
+        seasonId,
+        status: {
+          not: 'REVEALED',
+        },
+      },
+    });
+
+    if (unfinishedGameweeks > 0) {
+      throw new ForbiddenException(
+        'All gameweeks must be revealed before completing the season',
+      );
+    }
+
     return this.prisma.season.update({
       where: {
         id: seasonId,
@@ -132,6 +147,12 @@ export class SeasonService {
       );
     }
 
+    const deadline = new Date(dto.deadline);
+
+    if (deadline <= new Date()) {
+      throw new ConflictException('Gameweek deadline must be in the future');
+    }
+
     const existingGameweek = await this.prisma.seasonGameweek.findUnique({
       where: {
         seasonId_number: {
@@ -149,13 +170,21 @@ export class SeasonService {
       data: {
         seasonId,
         number: dto.number,
-        deadline: new Date(dto.deadline),
+        deadline,
         status: 'UPCOMING',
       },
     });
   }
 
   async openGameweek(seasonId: string, gameweekId: string, userId: string) {
+    const season = await this.getAdminSeason(seasonId, userId);
+
+    if (season.status !== 'ACTIVE') {
+      throw new ForbiddenException(
+        'The season must be active before a gameweek can be opened',
+      );
+    }
+
     const gameweek = await this.getAdminGameweek(seasonId, gameweekId, userId);
 
     if (gameweek.status !== 'UPCOMING') {
@@ -178,45 +207,14 @@ export class SeasonService {
     dto: CreateGameweekResultDto,
     userId: string,
   ) {
-    const season = await this.prisma.season.findUnique({
-      where: {
-        id: seasonId,
-      },
-    });
+    const season = await this.getAdminSeason(seasonId, userId);
 
-    if (!season) {
-      throw new NotFoundException('Season not found');
-    }
+    const gameweek = await this.getAdminGameweek(seasonId, gameweekId, userId);
 
-    const membership = await this.prisma.leagueMember.findUnique({
-      where: {
-        userId_leagueId: {
-          userId,
-          leagueId: season.leagueId,
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new ForbiddenException('You are not a member of this league');
-    }
-
-    if (membership.role !== 'ADMIN') {
-      throw new ForbiddenException('Only league admins can add results');
-    }
-
-    const gameweek = await this.prisma.seasonGameweek.findUnique({
-      where: {
-        id: gameweekId,
-      },
-    });
-
-    if (!gameweek || gameweek.seasonId !== seasonId) {
-      throw new NotFoundException('Gameweek not found');
-    }
-
-    if (gameweek.status === 'REVEALED') {
-      throw new ForbiddenException('This gameweek has already been revealed');
+    if (gameweek.status !== 'LOCKED') {
+      throw new ForbiddenException(
+        'Gameweek must be locked before results can be added',
+      );
     }
 
     const team = await this.prisma.team.findUnique({
@@ -271,6 +269,34 @@ export class SeasonService {
 
     if (gameweek.status !== 'LOCKED') {
       throw new ForbiddenException('Only a locked gameweek can be revealed');
+    }
+
+    const picks = await this.prisma.pick.findMany({
+      where: {
+        gameweekId,
+      },
+      select: {
+        teamId: true,
+      },
+    });
+
+    const results = await this.prisma.gameweekTeamResult.findMany({
+      where: {
+        gameweekId,
+      },
+      select: {
+        teamId: true,
+      },
+    });
+
+    const resultTeamIds = new Set(results.map((result) => result.teamId));
+
+    const missingResult = picks.some((pick) => !resultTeamIds.has(pick.teamId));
+
+    if (missingResult) {
+      throw new ForbiddenException(
+        'Results are missing for one or more selected teams',
+      );
     }
 
     return this.prisma.seasonGameweek.update({
