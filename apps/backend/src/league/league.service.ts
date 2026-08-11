@@ -102,6 +102,18 @@ export class LeagueService {
             },
           },
         },
+        seasons: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          include: {
+            gameweeks: {
+              orderBy: {
+                number: 'asc',
+              },
+            },
+          },
+        },
       },
     });
 
