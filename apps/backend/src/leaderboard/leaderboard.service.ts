@@ -54,19 +54,68 @@ export class LeaderboardService {
           seasonId,
         },
       },
-      select: {
-        userId: true,
-        totalPoints: true,
+      include: {
+        gameweek: {
+          select: {
+            id: true,
+          },
+        },
       },
     });
 
+    const results = await this.prisma.gameweekTeamResult.findMany({
+      where: {
+        gameweek: {
+          seasonId,
+        },
+      },
+      select: {
+        gameweekId: true,
+        teamId: true,
+        goalsFor: true,
+        goalsAgainst: true,
+      },
+    });
+
+    const resultsByGameweekAndTeam = new Map<
+      string,
+      {
+        goalsFor: number;
+        goalsAgainst: number;
+      }
+    >();
+
+    for (const result of results) {
+      resultsByGameweekAndTeam.set(
+        `${result.gameweekId}:${result.teamId}`,
+        {
+          goalsFor: result.goalsFor,
+          goalsAgainst: result.goalsAgainst,
+        },
+      );
+    }
+
     const pointsByUser = new Map<string, number>();
+    const goalDifferenceByUser = new Map<string, number>();
 
     for (const pick of picks) {
       pointsByUser.set(
         pick.userId,
         (pointsByUser.get(pick.userId) ?? 0) + pick.totalPoints,
       );
+
+      const result = resultsByGameweekAndTeam.get(
+        `${pick.gameweekId}:${pick.teamId}`,
+      );
+
+      if (result) {
+        const goalDifference = result.goalsFor - result.goalsAgainst;
+
+        goalDifferenceByUser.set(
+          pick.userId,
+          (goalDifferenceByUser.get(pick.userId) ?? 0) + goalDifference,
+        );
+      }
     }
 
     return members
@@ -74,8 +123,15 @@ export class LeaderboardService {
         userId: member.user.id,
         name: member.user.name,
         points: pointsByUser.get(member.user.id) ?? 0,
+        goalDifference: goalDifferenceByUser.get(member.user.id) ?? 0,
       }))
-      .sort((a, b) => b.points - a.points)
+      .sort((a, b) => {
+        if (b.points !== a.points) {
+          return b.points - a.points;
+        }
+
+        return b.goalDifference - a.goalDifference;
+      })
       .map((player, index) => ({
         rank: index + 1,
         ...player,
