@@ -40,23 +40,17 @@ export class PickService {
       throw new ForbiddenException('You are not a member of this league');
     }
 
-    // A Late Pass can bypass the deadline,
-    // but can NEVER bypass a locked/revealed gameweek.
     if (gameweek.status !== 'OPEN') {
       throw new ForbiddenException(
         'Picks are not currently open for this gameweek',
       );
     }
 
-    const isPastDeadline = new Date() > gameweek.deadline;
+    const now = new Date();
 
-    if (isPastDeadline && !dto.latePassUsed) {
-      throw new ForbiddenException('The deadline for this gameweek has passed');
-    }
-
-    if (dto.latePassUsed && !isPastDeadline) {
-      throw new ConflictException(
-        'Late Pass can only be used after the deadline',
+    if (now > gameweek.deadline) {
+      throw new ForbiddenException(
+        'The deadline has passed. Request a Late Pass to submit a pick.',
       );
     }
 
@@ -85,6 +79,22 @@ export class PickService {
       );
     }
 
+    const teamPickCount = await this.prisma.pick.count({
+      where: {
+        userId,
+        teamId: dto.teamId,
+        gameweek: {
+          seasonId: gameweek.seasonId,
+        },
+      },
+    });
+
+    if (teamPickCount >= 4) {
+      throw new ConflictException(
+        'You cannot pick the same team more than 4 times in a season',
+      );
+    }
+
     if (dto.predictionBoostUsed) {
       if (
         dto.predictedHomeGoals === undefined ||
@@ -105,27 +115,17 @@ export class PickService {
         },
       });
 
-      if (boostsUsed >= 5) {
-        throw new ForbiddenException(
-          'You have used all 5 Prediction Boosts for this season',
-        );
-      }
-    }
-
-    if (dto.latePassUsed) {
-      const latePassesUsed = await this.prisma.pick.count({
+      const settings = await this.prisma.leagueSettings.findUnique({
         where: {
-          userId,
-          latePassUsed: true,
-          gameweek: {
-            seasonId: gameweek.seasonId,
-          },
+          leagueId: gameweek.season.leagueId,
         },
       });
 
-      if (latePassesUsed >= 3) {
+      const maxBoosts = settings?.predictionBoosts ?? 5;
+
+      if (boostsUsed >= maxBoosts) {
         throw new ForbiddenException(
-          'You have used all 3 Late Passes for this season',
+          'You have used all your Prediction Boosts for this season',
         );
       }
     }
@@ -167,7 +167,7 @@ export class PickService {
         predictionBoostUsed: dto.predictionBoostUsed ?? false,
         predictedHomeGoals: dto.predictedHomeGoals,
         predictedAwayGoals: dto.predictedAwayGoals,
-        latePassUsed: dto.latePassUsed ?? false,
+        latePassUsed: false,
       },
     });
   }
@@ -214,45 +214,22 @@ export class PickService {
       throw new ForbiddenException('You can only update your own pick');
     }
 
-    // Late Pass cannot bypass LOCKED or REVEALED.
+    if (pick.latePassUsed) {
+      throw new ForbiddenException(
+        'Picks submitted using a Late Pass cannot be changed',
+      );
+    }
+
     if (pick.gameweek.status !== 'OPEN') {
       throw new ForbiddenException('Picks are not currently open');
     }
 
-    const isPastDeadline = new Date() > pick.gameweek.deadline;
+    const now = new Date();
 
-    if (isPastDeadline && !dto.latePassUsed) {
-      throw new ForbiddenException('The deadline for this gameweek has passed');
-    }
-
-    if (dto.latePassUsed && !isPastDeadline) {
-      throw new ConflictException(
-        'Late Pass can only be used after the deadline',
+    if (now > pick.gameweek.deadline) {
+      throw new ForbiddenException(
+        'The deadline has passed. Picks can no longer be changed.',
       );
-    }
-
-    if (dto.latePassUsed) {
-      if (pick.latePassUsed) {
-        throw new ConflictException(
-          'A Late Pass has already been used for this pick',
-        );
-      }
-
-      const latePassesUsed = await this.prisma.pick.count({
-        where: {
-          userId,
-          latePassUsed: true,
-          gameweek: {
-            seasonId: pick.gameweek.seasonId,
-          },
-        },
-      });
-
-      if (latePassesUsed >= 3) {
-        throw new ForbiddenException(
-          'You have used all 3 Late Passes for this season',
-        );
-      }
     }
 
     const team = await this.prisma.team.findUnique({
@@ -267,6 +244,25 @@ export class PickService {
 
     if (team.id === pick.teamId) {
       throw new ConflictException('You have already selected this team');
+    }
+
+    const teamPickCount = await this.prisma.pick.count({
+      where: {
+        userId,
+        teamId: dto.teamId,
+        gameweek: {
+          seasonId: pick.gameweek.seasonId,
+        },
+        NOT: {
+          id: pick.id,
+        },
+      },
+    });
+
+    if (teamPickCount >= 4) {
+      throw new ConflictException(
+        'You cannot pick the same team more than 4 times in a season',
+      );
     }
 
     const previousGameweek = await this.prisma.seasonGameweek.findFirst({
@@ -304,7 +300,6 @@ export class PickService {
       },
       data: {
         teamId: dto.teamId,
-        latePassUsed: pick.latePassUsed || dto.latePassUsed === true,
       },
     });
   }

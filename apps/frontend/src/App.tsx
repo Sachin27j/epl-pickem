@@ -1,22 +1,24 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "./auth/use-auth";
+import GameweekPage from "./pages/GameweekPage";
+import LeaguePage from "./pages/LeaguePage";
+import LeaguesPage from "./pages/LeaguesPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import LeaguesPage from "./pages/LeaguesPage";
-import LeaguePage from "./pages/LeaguePage";
+import SeasonPage from "./pages/SeasonPage";
 
 function DashboardPage() {
   const { user, logout } = useAuth();
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8">
+    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:py-8">
       <div className="mx-auto max-w-4xl">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Welcome, {user?.email}</h1>
 
-            <p className="mt-1 text-sm text-slate-500">EPL Pick'em</p>
+            <p className="mt-1 text-sm text-slate-500">EPL Pick&apos;em</p>
           </div>
 
           <button
@@ -31,7 +33,7 @@ function DashboardPage() {
           <h2 className="text-lg font-semibold">Your leagues</h2>
 
           <p className="mt-2 text-sm text-slate-500">
-            Create or join an EPL Pick'em league.
+            Create or join an EPL Pick&apos;em league.
           </p>
 
           <a
@@ -51,9 +53,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        Loading...
-      </div>
+      <main className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-sm text-slate-500">Loading...</p>
+      </main>
     );
   }
 
@@ -64,22 +66,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return children;
 }
 
-export default function App() {
-  return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
-  );
-}
-
 function AppRoutes() {
   const { isLoading } = useAuth();
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        Loading...
-      </div>
+      <main className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-sm text-slate-500">Loading...</p>
+      </main>
     );
   }
 
@@ -100,8 +94,6 @@ function AppRoutes() {
         }
       />
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-
       <Route
         path="/leagues"
         element={
@@ -119,6 +111,34 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      <Route
+        path="/leagues/:leagueId/seasons/:seasonId"
+        element={
+          <ProtectedRoute>
+            <SeasonPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/leagues/:leagueId/seasons/:seasonId/gameweeks/:gameweekId"
+        element={
+          <ProtectedRoute>
+            <GameweekPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }

@@ -12,6 +12,12 @@ enum LeagueRole {
   PLAYER
 }
 
+enum LatePassRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum SeasonStatus {
   UPCOMING
   ACTIVE
@@ -46,6 +52,24 @@ enum EventType {
   SEASON_CREATED
 }
 
+model LatePassRequest {
+  id String @id @default(cuid())
+
+  userId String
+  gameweekId String
+  teamId String
+
+  status LatePassRequestStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  reviewedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+  gameweek SeasonGameweek @relation(fields: [gameweekId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, gameweekId])
+}
 model User {
   id           String @id @default(cuid())
   name         String
@@ -62,6 +86,7 @@ model User {
   events    EventLog[]
   auditLogs AuditLog[]
   snapshots StandingSnapshot[]
+  latePassRequests LatePassRequest[]
 }
 
 model League {
@@ -139,6 +164,7 @@ model Team {
 
   picks   Pick[]
   results GameweekTeamResult[]
+  latePassRequests LatePassRequest[]
 }
 
 model SeasonGameweek {
@@ -159,6 +185,7 @@ model SeasonGameweek {
   snapshots StandingSnapshot[]
   events    EventLog[]
   results   GameweekTeamResult[]
+  latePassRequests LatePassRequest[]
 
   @@unique([seasonId, number])
 }

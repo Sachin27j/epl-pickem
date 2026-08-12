@@ -20,8 +20,4 @@ export class CreatePickDto {
   @IsInt()
   @Min(0)
   predictedAwayGoals?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  latePassUsed?: boolean;
 }

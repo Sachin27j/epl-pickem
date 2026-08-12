@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGameweekDto } from './dto/create-gameweek.dto';
@@ -83,6 +84,78 @@ export class SeasonService {
     }
 
     return season;
+  }
+
+  async getLeaderboard(seasonId: string, userId: string) {
+    const season = await this.prisma.season.findUnique({
+      where: {
+        id: seasonId,
+      },
+    });
+
+    if (!season) {
+      throw new NotFoundException('Season not found');
+    }
+
+    const membership = await this.prisma.leagueMember.findUnique({
+      where: {
+        userId_leagueId: {
+          userId,
+          leagueId: season.leagueId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    const members = await this.prisma.leagueMember.findMany({
+      where: {
+        leagueId: season.leagueId,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const picks = await this.prisma.pick.findMany({
+      where: {
+        gameweek: {
+          seasonId,
+        },
+      },
+      select: {
+        userId: true,
+        totalPoints: true,
+      },
+    });
+
+    const pointsByUser = new Map<string, number>();
+
+    for (const pick of picks) {
+      pointsByUser.set(
+        pick.userId,
+        (pointsByUser.get(pick.userId) ?? 0) + pick.totalPoints,
+      );
+    }
+
+    return members
+      .map((member) => ({
+        userId: member.user.id,
+        name: member.user.name,
+        points: pointsByUser.get(member.user.id) ?? 0,
+      }))
+      .sort((a, b) => b.points - a.points)
+      .map((player, index) => ({
+        rank: index + 1,
+        ...player,
+      }));
   }
 
   async activateSeason(seasonId: string, userId: string) {
@@ -244,22 +317,63 @@ export class SeasonService {
         goalsFor: dto.goalsFor,
         goalsAgainst: dto.goalsAgainst,
       },
+      include: {
+        team: true,
+      },
     });
   }
 
-  async lockGameweek(seasonId: string, gameweekId: string, userId: string) {
-    const gameweek = await this.getAdminGameweek(seasonId, gameweekId, userId);
+  async getResults(seasonId: string, gameweekId: string, userId: string) {
+    const season = await this.prisma.season.findUnique({
+      where: {
+        id: seasonId,
+      },
+    });
 
-    if (gameweek.status !== 'OPEN') {
-      throw new ForbiddenException('Only an open gameweek can be locked');
+    if (!season) {
+      throw new NotFoundException('Season not found');
     }
 
-    return this.prisma.seasonGameweek.update({
+    const membership = await this.prisma.leagueMember.findUnique({
+      where: {
+        userId_leagueId: {
+          userId,
+          leagueId: season.leagueId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    const gameweek = await this.prisma.seasonGameweek.findUnique({
       where: {
         id: gameweekId,
       },
-      data: {
-        status: 'LOCKED',
+    });
+
+    if (!gameweek || gameweek.seasonId !== seasonId) {
+      throw new NotFoundException('Gameweek not found');
+    }
+
+    return this.prisma.gameweekTeamResult.findMany({
+      where: {
+        gameweekId,
+      },
+      include: {
+        team: {
+          select: {
+            id: true,
+            name: true,
+            shortName: true,
+          },
+        },
+      },
+      orderBy: {
+        team: {
+          name: 'asc',
+        },
       },
     });
   }
@@ -305,6 +419,321 @@ export class SeasonService {
       },
       data: {
         status: 'REVEALED',
+      },
+    });
+  }
+
+  /*
+   * Automatically lock an open gameweek once its
+   * 24-hour Late Pass window has expired.
+   *
+   * deadline + 24 hours = lock time.
+   *
+   * Runs once every minute.
+   */
+  @Interval(60_000)
+  async lockExpiredGameweeks() {
+    const now = new Date();
+
+    const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    await this.prisma.seasonGameweek.updateMany({
+      where: {
+        status: 'OPEN',
+        deadline: {
+          lte: cutoff,
+        },
+      },
+      data: {
+        status: 'LOCKED',
+      },
+    });
+  }
+
+  async requestLatePass(
+    seasonId: string,
+    gameweekId: string,
+    userId: string,
+    teamId: string,
+  ) {
+    const gameweek = await this.prisma.seasonGameweek.findFirst({
+      where: {
+        id: gameweekId,
+        seasonId,
+      },
+      include: {
+        season: true,
+      },
+    });
+
+    if (!gameweek) {
+      throw new NotFoundException('Gameweek not found');
+    }
+
+    const membership = await this.prisma.leagueMember.findUnique({
+      where: {
+        userId_leagueId: {
+          userId,
+          leagueId: gameweek.season.leagueId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    if (gameweek.status !== 'OPEN') {
+      throw new ForbiddenException(
+        'Late Pass requests are not available for this gameweek',
+      );
+    }
+
+    const now = new Date();
+
+    if (now <= gameweek.deadline) {
+      throw new ConflictException(
+        'Late Pass can only be requested after the deadline',
+      );
+    }
+
+    const cutoff = new Date(gameweek.deadline.getTime() + 24 * 60 * 60 * 1000);
+
+    if (now >= cutoff) {
+      throw new ForbiddenException('The Late Pass window has expired');
+    }
+
+    const team = await this.prisma.team.findUnique({
+      where: {
+        id: teamId,
+      },
+    });
+
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+
+    const existingPick = await this.prisma.pick.findUnique({
+      where: {
+        userId_gameweekId: {
+          userId,
+          gameweekId,
+        },
+      },
+    });
+
+    if (existingPick) {
+      throw new ConflictException('You already have a pick for this gameweek');
+    }
+
+    const existingRequest = await this.prisma.latePassRequest.findUnique({
+      where: {
+        userId_gameweekId: {
+          userId,
+          gameweekId,
+        },
+      },
+    });
+
+    if (existingRequest) {
+      throw new ConflictException(
+        'You have already requested a Late Pass for this gameweek',
+      );
+    }
+
+    const latePassesUsed = await this.prisma.pick.count({
+      where: {
+        userId,
+        latePassUsed: true,
+        gameweek: {
+          seasonId: gameweek.seasonId,
+        },
+      },
+    });
+
+    const settings = await this.prisma.leagueSettings.findUnique({
+      where: {
+        leagueId: gameweek.season.leagueId,
+      },
+    });
+
+    const maxLatePasses = settings?.latePasses ?? 3;
+
+    if (latePassesUsed >= maxLatePasses) {
+      throw new ForbiddenException(
+        'You have used all of your Late Passes for this season',
+      );
+    }
+
+    return this.prisma.latePassRequest.create({
+      data: {
+        userId,
+        gameweekId,
+        teamId,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        team: {
+          select: {
+            id: true,
+            name: true,
+            shortName: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getLatePassRequests(
+    seasonId: string,
+    gameweekId: string,
+    userId: string,
+  ) {
+    const season = await this.prisma.season.findUnique({
+      where: {
+        id: seasonId,
+      },
+    });
+
+    if (!season) {
+      throw new NotFoundException('Season not found');
+    }
+
+    const gameweek = await this.prisma.seasonGameweek.findUnique({
+      where: {
+        id: gameweekId,
+      },
+    });
+
+    if (!gameweek || gameweek.seasonId !== seasonId) {
+      throw new NotFoundException('Gameweek not found');
+    }
+
+    const membership = await this.prisma.leagueMember.findUnique({
+      where: {
+        userId_leagueId: {
+          userId,
+          leagueId: season.leagueId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    const include = {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+      team: {
+        select: {
+          id: true,
+          name: true,
+          shortName: true,
+        },
+      },
+    };
+
+    if (membership.role === 'ADMIN') {
+      return this.prisma.latePassRequest.findMany({
+        where: {
+          gameweekId,
+        },
+        include,
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
+    }
+
+    return this.prisma.latePassRequest.findMany({
+      where: {
+        gameweekId,
+        userId,
+      },
+      include,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
+  async reviewLatePass(
+    seasonId: string,
+    gameweekId: string,
+    requestId: string,
+    userId: string,
+    status: 'APPROVED' | 'REJECTED',
+  ) {
+    await this.getAdminGameweek(seasonId, gameweekId, userId);
+
+    const request = await this.prisma.latePassRequest.findFirst({
+      where: {
+        id: requestId,
+        gameweekId,
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Late Pass request not found');
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new ConflictException(
+        'This Late Pass request has already been reviewed',
+      );
+    }
+
+    const gameweek = await this.prisma.seasonGameweek.findUnique({
+      where: {
+        id: gameweekId,
+      },
+    });
+
+    if (!gameweek) {
+      throw new NotFoundException('Gameweek not found');
+    }
+
+    const cutoff = new Date(gameweek.deadline.getTime() + 24 * 60 * 60 * 1000);
+
+    if (new Date() >= cutoff) {
+      throw new ForbiddenException('The Late Pass window has expired');
+    }
+
+    return this.prisma.latePassRequest.update({
+      where: {
+        id: requestId,
+      },
+      data: {
+        status,
+        reviewedAt: new Date(),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        team: {
+          select: {
+            id: true,
+            name: true,
+            shortName: true,
+          },
+        },
       },
     });
   }

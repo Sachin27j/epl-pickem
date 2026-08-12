@@ -4,10 +4,12 @@ import request from 'supertest';
 
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma/prisma.service';
+import { SeasonService } from './../src/season/season.service';
 
 describe('EPL Pickem Backend (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let seasonService: SeasonService;
 
   let adminToken: string;
   let playerToken: string;
@@ -60,6 +62,7 @@ describe('EPL Pickem Backend (e2e)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
+    seasonService = app.get(SeasonService);
 
     /*
      * Start every E2E run from a clean database.
@@ -68,6 +71,7 @@ describe('EPL Pickem Backend (e2e)', () => {
     await prisma.eventLog.deleteMany();
     await prisma.standingSnapshot.deleteMany();
     await prisma.gameweekTeamResult.deleteMany();
+    await prisma.latePassRequest.deleteMany();
     await prisma.pick.deleteMany();
     await prisma.fixture.deleteMany();
     await prisma.seasonGameweek.deleteMany();
@@ -464,25 +468,47 @@ describe('EPL Pickem Backend (e2e)', () => {
         .expect(403);
     });
 
-    it('locks the gameweek', async () => {
-      const response = await request(app.getHttpServer())
-        .post(`/season/${seasonId}/gameweek/${gameweekId}/lock`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(201);
+    /*
+     * Gameweeks are no longer manually locked.
+     *
+     * Deadline
+     *    ↓
+     * 24-hour Late Pass window
+     *    ↓
+     * automatic LOCKED
+     */
+    it('automatically locks the gameweek after the Late Pass window expires', async () => {
+      await prisma.seasonGameweek.update({
+        where: {
+          id: gameweekId,
+        },
+        data: {
+          deadline: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        },
+      });
 
-      expect(response.body.status).toBe('LOCKED');
+      await seasonService.lockExpiredGameweeks();
+
+      const gameweek = await prisma.seasonGameweek.findUnique({
+        where: {
+          id: gameweekId,
+        },
+      });
+
+      expect(gameweek?.status).toBe('LOCKED');
     });
 
     it('does not allow Late Pass to bypass a locked gameweek', async () => {
-      await request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .post('/pick')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           gameweekId,
           teamId: cityId,
-          latePassUsed: true,
         })
         .expect(403);
+
+      expect(response.status).toBe(403);
     });
 
     it('allows the admin to enter the Arsenal result', async () => {
@@ -614,18 +640,113 @@ describe('EPL Pickem Backend (e2e)', () => {
         .expect(403);
     });
 
-    it('allows a pick after the deadline with Late Pass', async () => {
+    it('rejects a Late Pass request after the 24-hour window', async () => {
+      await prisma.seasonGameweek.update({
+        where: {
+          id: gameweek2Id,
+        },
+        data: {
+          deadline: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/season/${seasonId}/gameweek/${gameweek2Id}/late-pass`)
+        .set('Authorization', `Bearer ${playerToken}`)
+        .expect(403);
+
+      /*
+       * Put the deadline back inside the Late Pass window
+       * so the approval/pick flow can be tested.
+       */
+      await prisma.seasonGameweek.update({
+        where: {
+          id: gameweek2Id,
+        },
+        data: {
+          deadline: new Date(Date.now() - 60 * 1000),
+        },
+      });
+    });
+
+    it('creates a Late Pass request', async () => {
       const response = await request(app.getHttpServer())
-        .post('/pick')
+        .post(`/season/${seasonId}/gameweek/${gameweek2Id}/late-pass`)
+        .set('Authorization', `Bearer ${playerToken}`)
+        .expect(201);
+
+      expect(response.body.status).toBe('PENDING');
+      expect(response.body.id).toBeDefined();
+    });
+
+    it('allows the admin to view Late Pass requests', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/season/${seasonId}/gameweek/${gameweek2Id}/late-pass`)
         .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0].status).toBe('PENDING');
+    });
+
+    it('rejects an unapproved Late Pass pick', async () => {
+      await request(app.getHttpServer())
+        .post('/pick')
+        .set('Authorization', `Bearer ${playerToken}`)
         .send({
           gameweekId: gameweek2Id,
           teamId: liverpoolId,
-          latePassUsed: true,
+        })
+        .expect(403);
+    });
+
+    it('allows the admin to approve the Late Pass', async () => {
+      const requests = await prisma.latePassRequest.findMany({
+        where: {
+          gameweekId: gameweek2Id,
+        },
+      });
+
+      expect(requests).toHaveLength(1);
+
+      await request(app.getHttpServer())
+        .post(
+          `/season/${seasonId}/gameweek/${gameweek2Id}/late-pass/${requests[0].id}/approve`,
+        )
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(201);
+    });
+
+    it('allows the player to submit a pick with an approved Late Pass', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/pick')
+        .set('Authorization', `Bearer ${playerToken}`)
+        .send({
+          gameweekId: gameweek2Id,
+          teamId: liverpoolId,
         })
         .expect(201);
 
       expect(response.body.latePassUsed).toBe(true);
+    });
+
+    it('does not allow a Late Pass to be used twice', async () => {
+      const anotherPick = await prisma.pick.findUnique({
+        where: {
+          userId_gameweekId: {
+            userId: (
+              await prisma.user.findUniqueOrThrow({
+                where: {
+                  email: playerUser.email,
+                },
+              })
+            ).id,
+            gameweekId: gameweek2Id,
+          },
+        },
+      });
+
+      expect(anotherPick?.latePassUsed).toBe(true);
     });
   });
 
@@ -664,13 +785,25 @@ describe('EPL Pickem Backend (e2e)', () => {
   });
 
   describe('Season completion', () => {
-    it('locks the second gameweek', async () => {
-      const response = await request(app.getHttpServer())
-        .post(`/season/${seasonId}/gameweek/${gameweek2Id}/lock`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(201);
+    it('automatically locks the second gameweek after the Late Pass window expires', async () => {
+      await prisma.seasonGameweek.update({
+        where: {
+          id: gameweek2Id,
+        },
+        data: {
+          deadline: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        },
+      });
 
-      expect(response.body.status).toBe('LOCKED');
+      await seasonService.lockExpiredGameweeks();
+
+      const gameweek = await prisma.seasonGameweek.findUnique({
+        where: {
+          id: gameweek2Id,
+        },
+      });
+
+      expect(gameweek?.status).toBe('LOCKED');
     });
 
     it('adds the second gameweek result', async () => {

@@ -1,6 +1,6 @@
 import { IsString } from 'class-validator';
 
-export class UpdatePickDto {
+export class RequestLatePassDto {
   @IsString()
-  teamId!: string;
+  teamId: string;
 }
