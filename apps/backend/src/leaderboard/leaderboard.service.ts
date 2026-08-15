@@ -86,13 +86,10 @@ export class LeaderboardService {
     >();
 
     for (const result of results) {
-      resultsByGameweekAndTeam.set(
-        `${result.gameweekId}:${result.teamId}`,
-        {
-          goalsFor: result.goalsFor,
-          goalsAgainst: result.goalsAgainst,
-        },
-      );
+      resultsByGameweekAndTeam.set(`${result.gameweekId}:${result.teamId}`, {
+        goalsFor: result.goalsFor,
+        goalsAgainst: result.goalsAgainst,
+      });
     }
 
     const pointsByUser = new Map<string, number>();
