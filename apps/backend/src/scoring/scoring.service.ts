@@ -59,7 +59,7 @@ export class ScoringService {
       },
     });
 
-    const resultsByTeam = new Map(
+    const resultsByTeam = new Map<string, (typeof results)[number]>(
       results.map((result) => [result.teamId, result]),
     );
 
