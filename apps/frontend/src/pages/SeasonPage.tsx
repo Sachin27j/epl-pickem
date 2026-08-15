@@ -436,43 +436,43 @@ export default function SeasonPage() {
               <p className="mt-5 text-sm text-slate-500">No players yet.</p>
             ) : (
               <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
-  {leaderboard.map((player) => (
-    <div
-      key={player.userId}
-      className="flex items-center justify-between border-b border-slate-100 px-4 py-4 last:border-b-0"
-    >
-      <div className="flex items-center gap-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold">
-          {player.rank}
-        </div>
+                {leaderboard.map((player) => (
+                  <div
+                    key={player.userId}
+                    className="flex items-center justify-between border-b border-slate-100 px-4 py-4 last:border-b-0"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold">
+                        {player.rank}
+                      </div>
 
-        <div>
-          <p className="font-medium">{player.name}</p>
+                      <div>
+                        <p className="font-medium">{player.name}</p>
 
-          {player.userId === user?.id && (
-            <p className="text-xs text-slate-500">You</p>
-          )}
-        </div>
-      </div>
+                        {player.userId === user?.id && (
+                          <p className="text-xs text-slate-500">You</p>
+                        )}
+                      </div>
+                    </div>
 
-      <div className="flex items-center gap-6">
-        <div className="text-right">
-          <p className="text-xs text-slate-500">GD</p>
-          <p className="font-semibold">
-            {player.goalDifference > 0
-              ? `+${player.goalDifference}`
-              : player.goalDifference}
-          </p>
-        </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500">GD</p>
+                        <p className="font-semibold">
+                          {player.goalDifference > 0
+                            ? `+${player.goalDifference}`
+                            : player.goalDifference}
+                        </p>
+                      </div>
 
-        <div className="text-right">
-          <p className="text-xs text-slate-500">Points</p>
-          <p className="text-lg font-bold">{player.points}</p>
-        </div>
-      </div>
-    </div>
-  ))}
-</div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500">Points</p>
+                        <p className="text-lg font-bold">{player.points}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </section>
