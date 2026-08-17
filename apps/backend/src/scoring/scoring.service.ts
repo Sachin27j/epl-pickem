@@ -41,7 +41,7 @@ export class ScoringService {
       throw new ForbiddenException('Only league admins can calculate scores');
     }
 
-    if (gameweek.status !== 'LOCKED') {
+    if (gameweek.status !== 'LOCKED' && gameweek.status !== 'REVEALED') {
       throw new ForbiddenException(
         'Gameweek must be locked before scores can be calculated',
       );
