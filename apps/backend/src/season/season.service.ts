@@ -760,6 +760,20 @@ export class SeasonService {
       throw new ForbiddenException('The Late Pass window has expired');
     }
 
+    if (status === 'APPROVED') {
+      await this.prisma.pick.create({
+        data: {
+          userId: request.userId,
+          gameweekId: request.gameweekId,
+          teamId: request.teamId,
+          latePassUsed: true,
+          predictionBoostUsed: false,
+          predictedHomeGoals: null,
+          predictedAwayGoals: null,
+        },
+      });
+    }
+
     return this.prisma.latePassRequest.update({
       where: {
         id: requestId,
