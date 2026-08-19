@@ -600,13 +600,7 @@ export class SeasonService {
       },
     });
 
-    const settings = await this.prisma.leagueSettings.findUnique({
-      where: {
-        leagueId: gameweek.season.leagueId,
-      },
-    });
-
-    const maxLatePasses = settings?.latePasses ?? 3;
+    const maxLatePasses = 3;
 
     if (latePassesUsed >= maxLatePasses) {
       throw new ForbiddenException(
