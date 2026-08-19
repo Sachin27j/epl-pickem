@@ -521,7 +521,7 @@ export default function GameweekPage() {
 
   const latePassWindowOpen =
     deadlinePassed &&
-    Date.now() < new Date(gameweek.deadline).getTime() + 24 * 60 * 60 * 1000 &&
+    Date.now() < new Date(gameweek.deadline).getTime() + 5 * 60 * 1000 &&
     gameweek.status === "OPEN";
 
   const canPick =
