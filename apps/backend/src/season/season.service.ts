@@ -484,7 +484,7 @@ export class SeasonService {
   async lockExpiredGameweeks() {
     const now = new Date();
 
-    const cutoff = new Date(now.getTime() - 5 * 60 * 1000);
+    const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
     await this.prisma.seasonGameweek.updateMany({
       where: {
@@ -546,7 +546,7 @@ export class SeasonService {
       );
     }
 
-    const cutoff = new Date(gameweek.deadline.getTime() + 5 * 60 * 1000);
+    const cutoff = new Date(gameweek.deadline.getTime() + 24 * 60 * 60 * 1000);
 
     if (now >= cutoff) {
       throw new ForbiddenException('The Late Pass window has expired');
@@ -754,7 +754,7 @@ export class SeasonService {
       throw new NotFoundException('Gameweek not found');
     }
 
-    const cutoff = new Date(gameweek.deadline.getTime() + 5 * 60 * 1000);
+    const cutoff = new Date(gameweek.deadline.getTime() + 24 * 60 * 60 * 1000);
 
     if (new Date() >= cutoff) {
       throw new ForbiddenException('The Late Pass window has expired');

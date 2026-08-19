@@ -81,20 +81,25 @@ export class ScoringService {
       let basePoints = 0;
       let gdBonus = 0;
 
+      const goalDifference = Math.abs(
+        result.goalsFor - result.goalsAgainst,
+      );
+
       if (result.goalsFor > result.goalsAgainst) {
+        // Win: +3 points
         basePoints = 3;
 
-        if (result.goalsFor - result.goalsAgainst >= 3) {
-          gdBonus = 1;
-        }
+        // +1 for every 3-goal winning margin
+        gdBonus = Math.floor(goalDifference / 3);
       } else if (result.goalsFor === result.goalsAgainst) {
+        // Draw: +1 point
         basePoints = 1;
       } else {
-        basePoints = 0;
+        // Loss: -3 points
+        basePoints = -3;
 
-        if (result.goalsAgainst - result.goalsFor >= 3) {
-          gdBonus = -1;
-        }
+        // -1 for every 3-goal losing margin
+        gdBonus = -Math.floor(goalDifference / 3);
       }
 
       const scoreBeforeBoost = basePoints + gdBonus;
