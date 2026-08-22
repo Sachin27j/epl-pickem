@@ -36,6 +36,12 @@ interface League {
   members: LeagueMember[];
 }
 
+interface PickStatus {
+  userId: string;
+  name: string;
+  hasPicked: boolean;
+}
+
 interface Pick {
   id: string;
   teamId: string;
@@ -128,6 +134,7 @@ export default function GameweekPage() {
   const [league, setLeague] = useState<League | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [pick, setPick] = useState<Pick | null>(null);
+  const [pickStatuses, setPickStatuses] = useState<PickStatus[]>([]);
   const [latePass, setLatePass] = useState<LatePassRequest | null>(null);
   const [latePassRequests, setLatePassRequests] = useState<LatePassRequest[]>(
     [],
@@ -180,6 +187,7 @@ export default function GameweekPage() {
       leagueResponse,
       teamsResponse,
       pickResponse,
+      pickStatusesResponse,
       resultsResponse,
     ] = await Promise.all([
       apiClient.get<Season>(`/season/${seasonId}`),
@@ -188,6 +196,9 @@ export default function GameweekPage() {
       apiClient
         .get<Pick | null>(`/pick/gameweek/${gameweekId}`)
         .catch(() => ({ data: null })),
+      apiClient
+        .get<PickStatus[]>(`/pick/gameweek/${gameweekId}/statuses`)
+        .catch(() => ({ data: [] })),
       apiClient
         .get<GameweekResult[]>(
           `/season/${seasonId}/gameweek/${gameweekId}/results`,
@@ -199,6 +210,7 @@ export default function GameweekPage() {
     setLeague(leagueResponse.data);
     setTeams(teamsResponse.data);
     setPick(pickResponse.data);
+    setPickStatuses(pickStatusesResponse.data);
     setResults(resultsResponse.data);
 
     if (pickResponse.data) {
@@ -527,7 +539,7 @@ export default function GameweekPage() {
   const canPick =
     gameweek.status === "OPEN" &&
     (!deadlinePassed || latePass?.status === "APPROVED");
-
+    
   const canRequestLatePass = latePassWindowOpen && !latePass;
 
   const selectedTeam = teams.find((team) => team.id === selectedTeamId);
@@ -589,6 +601,37 @@ export default function GameweekPage() {
             {error}
           </p>
         )}
+
+        <section className="mt-6">
+          <div className="rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+            <h2 className="text-lg font-semibold">Picks</h2>
+
+            <div className="mt-4 space-y-2">
+              {pickStatuses.map((player) => (
+                <div
+                  key={player.userId}
+                  className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3"
+                >
+                  <span className="text-sm font-medium">
+                    {player.name}
+                  </span>
+
+                  <span
+                    className={`text-sm ${
+                      player.hasPicked
+                        ? "text-green-600"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {player.hasPicked
+                      ? "Has chosen their team ✓"
+                      : "Has not chosen yet"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
         {!isAdmin && (
           <section className="mt-6">
@@ -660,82 +703,78 @@ export default function GameweekPage() {
                     })}
                   </div>
 
-                  {canPick && (
-                    <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <label className="flex cursor-pointer items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={predictionBoostUsed}
-                          onChange={(event) =>
-                            setPredictionBoostUsed(event.target.checked)
-                          }
-                          className="mt-1 h-4 w-4 rounded border-slate-300"
-                        />
+                  <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <label className="flex cursor-pointer items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={predictionBoostUsed}
+                        onChange={(event) =>
+                          setPredictionBoostUsed(event.target.checked)
+                        }
+                        className="mt-1 h-4 w-4 rounded border-slate-300"
+                      />
+
+                      <div>
+                        <p className="text-sm font-semibold">
+                          Use Prediction Boost
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          Correctly predict the selected team's score to double
+                          your points.
+                        </p>
+                      </div>
+                    </label>
+
+                    {predictionBoostUsed && (
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-600">
+                            {selectedTeam?.shortName || "Selected team"} goals
+                          </label>
+
+                          <input
+                            type="number"
+                            min={0}
+                            value={predictedHomeGoals}
+                            onChange={(event) =>
+                              setPredictedHomeGoals(event.target.value)
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-slate-900"
+                          />
+                        </div>
 
                         <div>
-                          <p className="text-sm font-semibold">
-                            Use Prediction Boost
-                          </p>
+                          <label className="text-xs font-medium text-slate-600">
+                            Opponent goals
+                          </label>
 
-                          <p className="mt-1 text-xs text-slate-500">
-                            Correctly predict the selected team's score to
-                            double your points.
-                          </p>
+                          <input
+                            type="number"
+                            min={0}
+                            value={predictedAwayGoals}
+                            onChange={(event) =>
+                              setPredictedAwayGoals(event.target.value)
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-slate-900"
+                          />
                         </div>
-                      </label>
+                      </div>
+                    )}
+                  </div>
 
-                      {predictionBoostUsed && (
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-xs font-medium text-slate-600">
-                              {selectedTeam?.shortName || "Selected team"} goals
-                            </label>
-
-                            <input
-                              type="number"
-                              min={0}
-                              value={predictedHomeGoals}
-                              onChange={(event) =>
-                                setPredictedHomeGoals(event.target.value)
-                              }
-                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-slate-900"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-xs font-medium text-slate-600">
-                              Opponent goals
-                            </label>
-
-                            <input
-                              type="number"
-                              min={0}
-                              value={predictedAwayGoals}
-                              onChange={(event) =>
-                                setPredictedAwayGoals(event.target.value)
-                              }
-                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-slate-900"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {canPick && (
-                    <button
-                      type="button"
-                      onClick={() => void submitPick()}
-                      disabled={!selectedTeamId || submitting}
-                      className="mt-5 w-full rounded-lg bg-slate-900 px-4 py-3 font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-                    >
-                      {submitting
-                        ? "Submitting..."
-                        : pick
-                          ? "Update pick"
-                          : "Submit pick"}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => void submitPick()}
+                    disabled={!selectedTeamId || submitting}
+                    className="mt-5 w-full rounded-lg bg-slate-900 px-4 py-3 font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {submitting
+                      ? "Submitting..."
+                      : pick
+                        ? "Update pick"
+                        : "Submit pick"}
+                  </button>
                 </>
               )}
 

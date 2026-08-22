@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
+
 import { CreatePickDto } from './dto/create-pick.dto';
 import { UpdatePickDto } from './dto/update-pick.dto';
 import { PickService } from './pick.service';
@@ -27,6 +28,11 @@ export class PickController {
   @Get('gameweek/:gameweekId')
   getMyPick(@Param('gameweekId') gameweekId: string, @Req() req: any) {
     return this.pickService.getMyPick(gameweekId, req.user.id);
+  }
+
+  @Get('gameweek/:gameweekId/statuses')
+  getPickStatuses(@Param('gameweekId') gameweekId: string, @Req() req: any) {
+    return this.pickService.getPickStatuses(gameweekId, req.user.id);
   }
 
   @Patch(':id')

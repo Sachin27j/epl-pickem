@@ -192,6 +192,69 @@ export class PickService {
     });
   }
 
+  async getPickStatuses(gameweekId: string, userId: string) {
+    const gameweek = await this.prisma.seasonGameweek.findUnique({
+      where: {
+        id: gameweekId,
+      },
+      include: {
+        season: true,
+      },
+    });
+
+    if (!gameweek) {
+      throw new NotFoundException('Gameweek not found');
+    }
+
+    const membership = await this.prisma.leagueMember.findUnique({
+      where: {
+        userId_leagueId: {
+          userId,
+          leagueId: gameweek.season.leagueId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this league');
+    }
+
+    const players = await this.prisma.leagueMember.findMany({
+      where: {
+        leagueId: gameweek.season.leagueId,
+        role: 'PLAYER',
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    const picks = await this.prisma.pick.findMany({
+      where: {
+        gameweekId,
+        userId: {
+          in: players.map((player) => player.userId),
+        },
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    const pickedUserIds = new Set(picks.map((pick) => pick.userId));
+
+    return players.map((player) => ({
+      userId: player.userId,
+      name: player.user.name,
+      hasPicked: pickedUserIds.has(player.userId),
+    }));
+  }
+
   async update(id: string, dto: UpdatePickDto, userId: string) {
     const pick = await this.prisma.pick.findUnique({
       where: {

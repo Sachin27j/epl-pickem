@@ -81,9 +81,7 @@ export class ScoringService {
       let basePoints = 0;
       let gdBonus = 0;
 
-      const goalDifference = Math.abs(
-        result.goalsFor - result.goalsAgainst,
-      );
+      const goalDifference = Math.abs(result.goalsFor - result.goalsAgainst);
 
       if (result.goalsFor > result.goalsAgainst) {
         // Win: +3 points
