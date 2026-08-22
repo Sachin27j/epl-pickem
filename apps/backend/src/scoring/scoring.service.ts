@@ -93,8 +93,8 @@ export class ScoringService {
         // Draw: +1 point
         basePoints = 1;
       } else {
-        // Loss: -3 points
-        basePoints = -3;
+        // Loss: 0 points
+        basePoints = 0;
 
         // -1 for every 3-goal losing margin
         gdBonus = -Math.floor(goalDifference / 3);
