@@ -748,7 +748,7 @@ export class SeasonService {
       throw new NotFoundException('Gameweek not found');
     }
 
-    const cutoff = new Date(gameweek.deadline.getTime() + 24 * 60 * 60 * 1000);
+    const cutoff = new Date(gameweek.deadline.getTime() + 48 * 60 * 60 * 1000);
 
     if (new Date() >= cutoff) {
       throw new ForbiddenException('The Late Pass window has expired');
