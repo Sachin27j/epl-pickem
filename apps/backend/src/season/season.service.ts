@@ -86,6 +86,59 @@ export class SeasonService {
     return season;
   }
 
+  async getSeasonPickUsage(seasonId: string, userId: string) {
+  const season = await this.prisma.season.findUnique({
+    where: { id: seasonId },
+  });
+
+  if (!season) {
+    throw new NotFoundException('Season not found');
+  }
+
+  const membership = await this.prisma.leagueMember.findUnique({
+    where: {
+      userId_leagueId: { userId, leagueId: season.leagueId },
+    },
+  });
+
+  if (!membership) {
+    throw new ForbiddenException('You are not a member of this league');
+  }
+
+  const [members, gameweeks, teams, picks] = await Promise.all([
+    this.prisma.leagueMember.findMany({
+      where: { leagueId: season.leagueId },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { user: { name: 'asc' } },
+    }),
+    this.prisma.seasonGameweek.findMany({
+      where: { seasonId },
+      select: { id: true, number: true, status: true },
+      orderBy: { number: 'asc' },
+    }),
+    this.prisma.team.findMany({
+      select: { id: true, name: true, shortName: true },
+      orderBy: { name: 'asc' },
+    }),
+    this.prisma.pick.findMany({
+      where: {
+        gameweek: { seasonId, status: 'REVEALED' },
+      },
+      select: { userId: true, gameweekId: true, teamId: true },
+    }),
+  ]);
+
+  return {
+    players: members.map((member) => ({
+      userId: member.user.id,
+      name: member.user.name,
+    })),
+    gameweeks,
+    teams,
+    picks,
+  };
+}
+
   async getLeaderboard(seasonId: string, userId: string) {
     const season = await this.prisma.season.findUnique({
       where: {

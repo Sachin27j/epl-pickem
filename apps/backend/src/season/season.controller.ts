@@ -39,6 +39,15 @@ export class SeasonController {
     return this.seasonService.getLeaderboard(seasonId, req.user.id);
   }
 
+  // NEW: Returns player, team, gameweek and revealed-pick data
+  @Get(':seasonId/pick-usage')
+  getSeasonPickUsage(
+    @Param('seasonId') seasonId: string,
+    @Req() req: any,
+  ) {
+    return this.seasonService.getSeasonPickUsage(seasonId, req.user.id);
+  }
+
   @Post(':seasonId/activate')
   activateSeason(@Param('seasonId') seasonId: string, @Req() req: any) {
     return this.seasonService.activateSeason(seasonId, req.user.id);
