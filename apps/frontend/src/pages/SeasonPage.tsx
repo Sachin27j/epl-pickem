@@ -37,6 +37,36 @@ interface LeaderboardEntry {
   goalDifference: number;
 }
 
+interface PickUsagePlayer {
+  userId: string;
+  name: string;
+}
+
+interface PickUsageTeam {
+  id: string;
+  name: string;
+  shortName: string;
+}
+
+interface PickUsageGameweek {
+  id: string;
+  number: number;
+  status: "UPCOMING" | "OPEN" | "LOCKED" | "REVEALED";
+}
+
+interface PickUsagePick {
+  userId: string;
+  gameweekId: string;
+  teamId: string;
+}
+
+interface PickUsage {
+  players: PickUsagePlayer[];
+  gameweeks: PickUsageGameweek[];
+  teams: PickUsageTeam[];
+  picks: PickUsagePick[];
+}
+
 function formatDeadline(deadline: string) {
   return new Date(deadline).toLocaleString([], {
     dateStyle: "medium",
@@ -80,6 +110,9 @@ export default function SeasonPage() {
   const [league, setLeague] = useState<League | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
+  const [pickUsage, setPickUsage] = useState<PickUsage | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -98,19 +131,34 @@ export default function SeasonPage() {
 
     async function load() {
       try {
-        const [seasonResponse, leagueResponse, leaderboardResponse] =
-          await Promise.all([
-            apiClient.get<Season>(`/season/${seasonId}`),
-            apiClient.get<League>(`/league/${leagueId}`),
-            apiClient.get<LeaderboardEntry[]>(
-              `/season/${seasonId}/leaderboard`,
-            ),
-          ]);
+        const [
+          seasonResponse,
+          leagueResponse,
+          leaderboardResponse,
+          pickUsageResponse,
+        ] = await Promise.all([
+          apiClient.get<Season>(`/season/${seasonId}`),
+          apiClient.get<League>(`/league/${leagueId}`),
+          apiClient.get<LeaderboardEntry[]>(
+            `/season/${seasonId}/leaderboard`,
+          ),
+          apiClient.get<PickUsage>(`/season/${seasonId}/pick-usage`),
+        ]);
 
         if (!cancelled) {
           setSeason(seasonResponse.data);
           setLeague(leagueResponse.data);
           setLeaderboard(leaderboardResponse.data);
+          setPickUsage(pickUsageResponse.data);
+
+          const players = pickUsageResponse.data.players;
+          const currentPlayer = players.find(
+            (player) => player.userId === user?.id,
+          );
+
+          setSelectedPlayerId(
+            currentPlayer?.userId ?? players[0]?.userId ?? "",
+          );
         }
       } catch {
         if (!cancelled) {
@@ -128,20 +176,23 @@ export default function SeasonPage() {
     return () => {
       cancelled = true;
     };
-  }, [leagueId, seasonId]);
+  }, [leagueId, seasonId, user?.id]);
 
   async function refresh() {
     if (!seasonId) {
       return;
     }
 
-    const [seasonResponse, leaderboardResponse] = await Promise.all([
-      apiClient.get<Season>(`/season/${seasonId}`),
-      apiClient.get<LeaderboardEntry[]>(`/season/${seasonId}/leaderboard`),
-    ]);
+    const [seasonResponse, leaderboardResponse, pickUsageResponse] =
+      await Promise.all([
+        apiClient.get<Season>(`/season/${seasonId}`),
+        apiClient.get<LeaderboardEntry[]>(`/season/${seasonId}/leaderboard`),
+        apiClient.get<PickUsage>(`/season/${seasonId}/pick-usage`),
+      ]);
 
     setSeason(seasonResponse.data);
     setLeaderboard(leaderboardResponse.data);
+    setPickUsage(pickUsageResponse.data);
   }
 
   async function createGameweek(event: FormEvent) {
@@ -244,8 +295,28 @@ export default function SeasonPage() {
   }
 
   const member = league.members.find((item) => item.userId === user?.id);
-
   const isAdmin = member?.role === "ADMIN";
+
+  const selectedPlayer = pickUsage?.players.find(
+    (player) => player.userId === selectedPlayerId,
+  );
+
+  const sortedTeams = [...(pickUsage?.teams ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+
+  const sortedGameweeks = [...(pickUsage?.gameweeks ?? [])].sort(
+    (a, b) => a.number - b.number,
+  );
+
+  function getPickForCell(teamId: string, gameweekId: string) {
+    return pickUsage?.picks.some(
+      (pick) =>
+        pick.userId === selectedPlayerId &&
+        pick.gameweekId === gameweekId &&
+        pick.teamId === teamId,
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:py-8">
@@ -333,6 +404,146 @@ export default function SeasonPage() {
             </button>
           </form>
         )}
+
+        {/* Season pick usage */}
+        <section className="mt-6">
+          <div className="rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+            <div>
+              <h2 className="text-lg font-semibold">Season pick history</h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                See which teams each player has picked throughout the season.
+              </p>
+            </div>
+
+            <div className="mt-5 max-w-sm">
+              <label
+                htmlFor="pick-history-player"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Select player
+              </label>
+
+              <select
+                id="pick-history-player"
+                value={selectedPlayerId}
+                onChange={(event) => setSelectedPlayerId(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-slate-900"
+              >
+                {pickUsage?.players.map((player) => (
+                  <option key={player.userId} value={player.userId}>
+                    {player.name}
+                    {player.userId === user?.id ? " (You)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {!pickUsage || pickUsage.players.length === 0 ? (
+              <p className="mt-5 text-sm text-slate-500">
+                No players found.
+              </p>
+            ) : sortedTeams.length === 0 ? (
+              <p className="mt-5 text-sm text-slate-500">
+                No teams found.
+              </p>
+            ) : (
+              <>
+                <div className="mt-5 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-bold text-green-600">✓</span>
+                    Picked
+                  </span>
+
+                  <span className="flex items-center gap-1.5">
+                    <span>—</span>
+                    Not picked
+                  </span>
+
+                  <span className="flex items-center gap-1.5">
+                    <span>·</span>
+                    Not revealed
+                  </span>
+                </div>
+
+                <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-max min-w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        <th className="sticky left-0 z-20 min-w-[150px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold text-slate-700">
+                          Team
+                        </th>
+
+                        {sortedGameweeks.map((gameweek) => (
+                          <th
+                            key={gameweek.id}
+                            className="min-w-[76px] border-b border-slate-200 px-3 py-3 text-center font-semibold text-slate-700"
+                          >
+                            GW{gameweek.number}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {sortedTeams.map((team) => (
+                        <tr
+                          key={team.id}
+                          className="hover:bg-slate-50"
+                        >
+                          <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-4 py-3 font-medium text-slate-800">
+                            {team.name}
+                          </td>
+
+                          {sortedGameweeks.map((gameweek) => {
+                            const isRevealed =
+                              gameweek.status === "REVEALED";
+
+                            const isPicked = isRevealed
+                              ? getPickForCell(team.id, gameweek.id)
+                              : false;
+
+                            return (
+                              <td
+                                key={gameweek.id}
+                                className="border-b border-slate-100 px-3 py-3 text-center"
+                              >
+                                {isRevealed ? (
+                                  isPicked ? (
+                                    <span
+                                      className="font-bold text-green-600"
+                                      title={`${selectedPlayer?.name} picked ${team.name} in GW${gameweek.number}`}
+                                    >
+                                      ✓
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )
+                                ) : (
+                                  <span
+                                    className="text-slate-300"
+                                    title="Picks are hidden until this gameweek is revealed"
+                                  >
+                                    ·
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="mt-3 text-xs text-slate-400">
+                  Scroll horizontally to view all gameweeks. Picks are shown
+                  only after the corresponding gameweek is revealed.
+                </p>
+              </>
+            )}
+          </div>
+        </section>
 
         <section className="mt-6">
           <div className="flex items-center justify-between">
